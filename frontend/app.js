@@ -1,8 +1,10 @@
 (() => {
   const cfg = window.APP_CONFIG || {};
 
+  // Board uses these codes (data-drop / data-count)
   const STATUS_ORDER = ["NOT_STARTED", "IN_PROGRESS", "DONE"];
 
+  // Mapping between UI codes and API labels
   const STATUS_LABEL_FROM_CODE = {
     NOT_STARTED: "Not Started",
     IN_PROGRESS: "In Progress",
@@ -16,17 +18,15 @@
   };
 
   const state = {
-    tasks: [],
+    tasks: [],              // tasks currently loaded (maybe category-scoped)
+    categories: [],         // categories loaded from GET /categories
     dragTaskId: null,
+    currentCategory: "",    // active category filter ("" = all)
   };
 
   const $ = (id) => document.getElementById(id);
 
-  // ---------- Utils ----------
-  function nowIso() {
-    return new Date().toISOString();
-  }
-
+  // ---------- Helpers ----------
   function safeStr(v) {
     return (v ?? "").toString();
   }
@@ -44,9 +44,9 @@
     return escapeHtml(str).replaceAll("`", "&#096;");
   }
 
-  function setTitle() {
-    const name = (cfg.STUDENT_NAME || "Student").trim();
-    $("pageTitle").textContent = `${name}'s To Do List`;
+  function cssEscape(value) {
+    if (window.CSS && typeof window.CSS.escape === "function") return window.CSS.escape(value);
+    return safeStr(value).replace(/"/g, '\\"');
   }
 
   function apiUrl(path) {
@@ -59,7 +59,6 @@
   }
 
   function taskByIdPath(id) {
-    // Supports "/tasks/{id}" template if provided
     const tpl = cfg.TASK_BY_ID_PATH || "/tasks/{id}";
     return tpl.replace("{id}", encodeURIComponent(id));
   }
@@ -75,83 +74,35 @@
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
-  function isOverdue(dateStr) {
-    if (!dateStr) return false;
-    const d = new Date(dateStr + "T23:59:59");
-    if (Number.isNaN(d.getTime())) return false;
-    return d.getTime() < Date.now();
-  }
-
   function toStatusCode(anyStatus) {
     const s = safeStr(anyStatus).trim();
-    if (STATUS_ORDER.includes(s)) return s; // already a code
-    if (STATUS_CODE_FROM_LABEL[s]) return STATUS_CODE_FROM_LABEL[s]; // label -> code
+    if (STATUS_ORDER.includes(s)) return s;
+    if (STATUS_CODE_FROM_LABEL[s]) return STATUS_CODE_FROM_LABEL[s];
     return "NOT_STARTED";
   }
 
   function toStatusLabel(anyStatus) {
     const s = safeStr(anyStatus).trim();
-    if (STATUS_LABEL_FROM_CODE[s]) return STATUS_LABEL_FROM_CODE[s]; // code -> label
-    if (STATUS_CODE_FROM_LABEL[s]) return s; // already a label we know
+    if (STATUS_LABEL_FROM_CODE[s]) return STATUS_LABEL_FROM_CODE[s];
+    if (STATUS_CODE_FROM_LABEL[s]) return s;
     return "Not Started";
   }
 
-  // Normalize task from API into UI-friendly shape
   function normalizeTask(raw) {
-    const id = raw.id ?? raw.taskId ?? raw._id ?? raw.pk ?? raw.SK;
-    const dueDate = raw.due_date ?? raw.dueDate ?? raw.due ?? "";
-    const createdAt = raw.created_at ?? raw.createdAt ?? "";
-    const updatedAt = raw.updated_at ?? raw.updatedAt ?? "";
-
-    const statusCode = toStatusCode(raw.status || "Not Started");
+    // backend shape (preferred)
+    const id = raw.id ?? raw.taskId ?? raw._id ?? "";
+    const due = raw.due_date ?? raw.dueDate ?? "";
 
     return {
       id: safeStr(id),
-      title: safeStr(raw.title || raw.taskTitle || raw.name || "Untitled Task"),
-      status: statusCode, // <-- UI CODE stored here
+      title: safeStr(raw.title || "Untitled Task"),
       category: safeStr(raw.category || ""),
-      due_date: safeStr(dueDate || ""),
+      status: toStatusCode(raw.status || "Not Started"), // store CODE in UI state
+      due_date: safeStr(due || ""),
       description: safeStr(raw.description || ""),
-      createdAt: safeStr(createdAt || ""),
-      updatedAt: safeStr(updatedAt || ""),
+      created_at: safeStr(raw.created_at || ""),
+      updated_at: safeStr(raw.updated_at || ""),
     };
-  }
-
-  function sortTasks(list) {
-    const sortMode = $("sortSelect").value;
-    const copy = [...list];
-
-    if (sortMode === "dueSoon") {
-      copy.sort((a, b) => {
-        const ad = a.due_date ? new Date(a.due_date).getTime() : Number.POSITIVE_INFINITY;
-        const bd = b.due_date ? new Date(b.due_date).getTime() : Number.POSITIVE_INFINITY;
-        if (ad !== bd) return ad - bd;
-
-        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
-      });
-    } else {
-      // recent
-      copy.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-    }
-
-    return copy;
-  }
-
-  function filterTasks() {
-    const q = safeStr($("searchInput").value).trim().toLowerCase();
-    const cat = $("categoryFilter").value;
-
-    let list = [...state.tasks];
-
-    if (q) {
-      list = list.filter((t) => t.title.toLowerCase().includes(q));
-    }
-
-    if (cat) {
-      list = list.filter((t) => t.category === cat);
-    }
-
-    return sortTasks(list);
   }
 
   // ---------- Toast ----------
@@ -187,6 +138,12 @@
     }, 2500);
   }
 
+  function setTitle() {
+    const name = (cfg.STUDENT_NAME || "Student").trim();
+    const titleEl = $("pageTitle");
+    if (titleEl) titleEl.textContent = `${name}'s To Do List`;
+  }
+
   function setLoading(on) {
     const btn = $("btnRefresh");
     if (!btn) return;
@@ -215,30 +172,57 @@
     if (!res.ok) {
       const msg =
         data && (data.message || data.error)
-          ? data.message || data.error
+          ? (data.message || data.error)
           : `HTTP ${res.status}`;
       throw new Error(msg);
     }
-
     return data;
   }
 
-  async function loadTasks() {
+  // ✅ GET /categories (used for modal + optional filter list)
+  async function loadCategories() {
+    try {
+      const data = await apiFetch(categoriesPath(), { method: "GET" });
+      const arr = Array.isArray(data) ? data : (data?.items || data?.categories || []);
+      const cats = arr
+        .map((x) => (typeof x === "string" ? x : (x?.name || x?.category || "")))
+        .map((s) => safeStr(s).trim())
+        .filter(Boolean);
+
+      state.categories = Array.from(new Set(cats)).sort((a, b) => a.localeCompare(b));
+      fillModalCategorySelect();
+      fillCategoryFilterSelect(); // optional: keep filter list aligned with categories API
+    } catch (err) {
+      console.warn("GET /categories failed:", err);
+      state.categories = [];
+      // still keep UI functional using tasks-derived categories later
+    }
+  }
+
+  // ✅ GET /tasks OR GET /tasks?category=
+  async function loadTasksByCategory(category) {
     try {
       setLoading(true);
-      const data = await apiFetch(tasksPath(), { method: "GET" });
+      state.currentCategory = category || "";
 
-      const arr = Array.isArray(data) ? data : data?.items || data?.tasks || [];
+      let path = tasksPath();
+
+      // If a category is selected, call the query param endpoint
+      if (state.currentCategory) {
+        const q = encodeURIComponent(state.currentCategory);
+        path = `${tasksPath()}?category=${q}`;  // GET /tasks?category=
+      } else {
+        path = tasksPath();                     // GET /tasks
+      }
+
+      const data = await apiFetch(path, { method: "GET" });
+      const arr = Array.isArray(data) ? data : (data?.items || data?.tasks || []);
       state.tasks = arr.map(normalizeTask).filter((t) => t.id);
 
-      // Ensure createdAt exists for sorting
-      state.tasks = state.tasks.map((t) => ({
-        ...t,
-        createdAt: t.createdAt || nowIso(),
-      }));
-
       render();
-      toast("Loaded tasks ✅");
+      // Keep category lists fresh (tasks can introduce categories)
+      fillCategoryFilterFromTasks();
+      fillModalCategoryFromTasks();
     } catch (err) {
       console.error(err);
       toast(`Load failed: ${err.message}`, true);
@@ -247,124 +231,35 @@
     }
   }
 
+  // ✅ GET /tasks/{id} when opening edit modal
+  async function getTaskById(id) {
+    const data = await apiFetch(taskByIdPath(id), { method: "GET" }); //  GET /tasks/{id}
+    return normalizeTask(data);
+  }
+
+  // ✅ POST /tasks
   async function createTask(payload) {
-    const data = await apiFetch(tasksPath(), {
+    await apiFetch(tasksPath(), {
       method: "POST",
       body: JSON.stringify(payload),
     });
-
-    // If API returns created object
-    if (data && typeof data === "object") {
-      const created = normalizeTask(data);
-      if (created.id) {
-        state.tasks.unshift({ ...created, createdAt: created.createdAt || nowIso() });
-        return created;
-      }
-    }
-
-    // Otherwise reload
-    await loadTasks();
-    return null;
   }
 
+  // PUT /tasks/{id}
   async function updateTask(id, payload) {
     await apiFetch(taskByIdPath(id), {
       method: "PUT",
       body: JSON.stringify(payload),
     });
-
-    // Update local best-effort
-    const idx = state.tasks.findIndex((t) => t.id === id);
-    if (idx >= 0) {
-      const merged = { ...state.tasks[idx], ...payload };
-      state.tasks[idx] = normalizeTask(merged);
-      state.tasks[idx].createdAt = state.tasks[idx].createdAt || nowIso();
-    } else {
-      await loadTasks();
-    }
   }
 
-  async function deleteTask(id) {
+  // DELETE /tasks/{id}
+  async function removeTask(id) {
     await apiFetch(taskByIdPath(id), { method: "DELETE" });
-    state.tasks = state.tasks.filter((t) => t.id !== id);
   }
 
-  // ---------- Categories ----------
-  function normalizeCategoryResponse(data) {
-    // supports: ["School","Work"] OR {items:[...]} OR {categories:[...]}
-    const arr = Array.isArray(data) ? data : data?.items || data?.categories || [];
-    return arr
-      .map((x) => (typeof x === "string" ? x : x?.name || x?.category || ""))
-      .map((s) => safeStr(s).trim())
-      .filter(Boolean);
-  }
-
-  async function loadCategories() {
-    try {
-      const data = await apiFetch(categoriesPath(), { method: "GET" });
-      const cats = normalizeCategoryResponse(data);
-      fillCategorySelect(cats);
-    } catch (err) {
-      console.warn("Categories load failed:", err);
-      fillCategorySelect([]);
-    }
-  }
-
-  function fillCategorySelect(cats) {
-    const select = $("categorySelect");
-    if (!select) return;
-
-    const current = select.value;
-    const uniq = Array.from(new Set(cats)).sort((a, b) => a.localeCompare(b));
-    const options = ['<option value="">Select category...</option>'].concat(
-      uniq.map((c) => `<option value="${escapeHtmlAttr(c)}">${escapeHtml(c)}</option>`)
-    );
-
-    select.innerHTML = options.join("");
-
-    if (uniq.includes(current)) select.value = current;
-  }
-
-  function addCategoryToSelect(name) {
-    const select = $("categorySelect");
-    if (!select) return;
-
-    const n = (name || "").trim();
-    if (!n) return;
-
-    const exists = Array.from(select.options).some((o) => o.value === n);
-    if (!exists) {
-      const opt = document.createElement("option");
-      opt.value = n;
-      opt.textContent = n;
-      select.appendChild(opt);
-    }
-    select.value = n;
-  }
-
-  // Also fill the FILTER dropdown (top bar) based on tasks
-  function fillCategoryFilterFromTasks() {
-    const select = $("categoryFilter");
-    if (!select) return;
-
-    const current = select.value;
-    const cats = Array.from(
-      new Set(state.tasks.map((t) => t.category).filter(Boolean))
-    ).sort((a, b) => a.localeCompare(b));
-
-    const options = ['<option value="">All</option>'].concat(
-      cats.map((c) => `<option value="${escapeHtmlAttr(c)}">${escapeHtml(c)}</option>`)
-    );
-
-    select.innerHTML = options.join("");
-
-    if (cats.includes(current)) select.value = current;
-  }
-
-  // ---------- Render ----------
+  // ---------- Rendering ----------
   function render() {
-    const list = filterTasks();
-
     // clear columns + reset counts
     for (const statusCode of STATUS_ORDER) {
       const body = document.querySelector(`.column__body[data-drop="${cssEscape(statusCode)}"]`);
@@ -374,14 +269,12 @@
       if (count) count.textContent = "0";
     }
 
-    const counts = {
-      NOT_STARTED: 0,
-      IN_PROGRESS: 0,
-      DONE: 0,
-    };
+    const counts = { NOT_STARTED: 0, IN_PROGRESS: 0, DONE: 0 };
+
+    // Search + sort are client-side (keeps UI snappy)
+    const list = filterAndSortTasks(state.tasks);
 
     for (const t of list) {
-      t.status = toStatusCode(t.status); // ensure valid code
       counts[t.status]++;
 
       const body = document.querySelector(`.column__body[data-drop="${cssEscape(t.status)}"]`);
@@ -390,13 +283,33 @@
       body.appendChild(renderCard(t));
     }
 
-    // update counts
     for (const k of Object.keys(counts)) {
       const countEl = document.querySelector(`.count[data-count="${cssEscape(k)}"]`);
       if (countEl) countEl.textContent = String(counts[k]);
     }
+  }
 
-    fillCategoryFilterFromTasks();
+  function filterAndSortTasks(tasks) {
+    const q = safeStr($("searchInput")?.value).trim().toLowerCase();
+    const sortMode = $("sortSelect")?.value || "recent";
+
+    let list = [...tasks];
+
+    if (q) list = list.filter((t) => t.title.toLowerCase().includes(q));
+
+    if (sortMode === "dueSoon") {
+      list.sort((a, b) => {
+        const ad = a.due_date ? new Date(a.due_date).getTime() : Number.POSITIVE_INFINITY;
+        const bd = b.due_date ? new Date(b.due_date).getTime() : Number.POSITIVE_INFINITY;
+        if (ad !== bd) return ad - bd;
+        return safeStr(b.created_at).localeCompare(safeStr(a.created_at));
+      });
+    } else {
+      // recent
+      list.sort((a, b) => safeStr(b.created_at).localeCompare(safeStr(a.created_at)));
+    }
+
+    return list;
   }
 
   function renderCard(t) {
@@ -409,13 +322,10 @@
       ? `<span class="badge">${escapeHtml(t.category)}</span>`
       : `<span class="badge">Uncategorized</span>`;
 
-    const overdue = isOverdue(t.due_date);
     const dueText = formatDue(t.due_date);
-    const dueHtml = `
-    <span class="due-inline" title="${overdue ? "Overdue" : "Due date"}">
-        ${escapeHtml(dueText)}
-    </span>
-    `;
+
+    //  date only (no icon, no pill)
+    const dueHtml = `<span class="due-inline" title="Due date">${escapeHtml(dueText)}</span>`;
 
     card.innerHTML = `
       <div class="card__top">
@@ -430,7 +340,6 @@
       </div>
     `;
 
-    // edit
     card.querySelector(".card__menu").addEventListener("click", (e) => {
       e.stopPropagation();
       openModalForEdit(t.id);
@@ -477,17 +386,19 @@
 
         if (task.status === newStatusCode) return;
 
-        const prevStatus = task.status;
-        task.status = newStatusCode; // optimistic (UI)
+        // optimistic UI
+        const prev = task.status;
+        task.status = newStatusCode;
         render();
 
         try {
-          // Backend expects LABELS
-          await updateTask(id, { status: toStatusLabel(newStatusCode) });
+          await updateTask(id, { status: toStatusLabel(newStatusCode) }); // PUT /tasks/{id}
           toast(`Moved to ${toStatusLabel(newStatusCode)} ✅`);
+          // reload tasks for the current filter to keep list consistent
+          await loadTasksByCategory(state.currentCategory);
         } catch (err) {
           console.error(err);
-          task.status = prevStatus; // rollback
+          task.status = prev;
           render();
           toast(`Move failed: ${err.message}`, true);
         }
@@ -495,26 +406,20 @@
     });
   }
 
-  // ---------- Modal + Rich Text ----------
+  // ---------- Modal ----------
   function openModal() {
-    const m = $("modal");
-    m.setAttribute("aria-hidden", "false");
+    $("modal")?.setAttribute("aria-hidden", "false");
   }
 
   function closeModal() {
-    const m = $("modal");
-    m.setAttribute("aria-hidden", "true");
-    $("taskForm").reset();
-    $("taskId").value = "";
-    $("btnDelete").style.display = "none";
+    $("modal")?.setAttribute("aria-hidden", "true");
+    $("taskForm")?.reset();
+    if ($("taskId")) $("taskId").value = "";
+    if ($("btnDelete")) $("btnDelete").style.display = "none";
 
-    // Clear rich editor
-    const ed = $("descriptionEditor");
-    if (ed) ed.innerHTML = "";
-    const hidden = $("descriptionInput");
-    if (hidden) hidden.value = "";
+    if ($("descriptionEditor")) $("descriptionEditor").innerHTML = "";
+    if ($("descriptionInput")) $("descriptionInput").value = "";
 
-    // Clear category add box
     if ($("categoryNew")) $("categoryNew").value = "";
   }
 
@@ -524,7 +429,7 @@
     $("taskId").value = "";
 
     $("titleInput").value = "";
-    $("statusInput").value = "Not Started"; // label (modal)
+    $("statusInput").value = "Not Started";
     $("dueInput").value = "";
     $("categorySelect").value = "";
     $("categoryNew").value = "";
@@ -532,30 +437,49 @@
     $("descriptionEditor").innerHTML = "";
     $("descriptionInput").value = "";
 
+    // ensure modal category list is up to date
+    fillModalCategorySelect();
+    fillModalCategoryFromTasks();
+
     openModal();
     $("titleInput").focus();
   }
 
-  function openModalForEdit(id) {
-    const t = state.tasks.find((x) => x.id === id);
-    if (!t) return;
-
+  //  Edit modal: call GET /tasks/{id}
+  async function openModalForEdit(id) {
     $("modalTitle").textContent = "Edit Task";
     $("btnDelete").style.display = "inline-block";
+    $("taskId").value = id;
 
-    $("taskId").value = t.id;
-    $("titleInput").value = t.title || "";
-    $("statusInput").value = toStatusLabel(t.status); // code -> label
-    $("dueInput").value = t.due_date || "";
-
-    addCategoryToSelect(t.category || "");
-
-    const desc = t.description || "";
-    $("descriptionEditor").innerHTML = desc;
-    $("descriptionInput").value = desc;
-
+    // show modal fast
     openModal();
-    $("titleInput").focus();
+
+    // optional: lightweight loading hint
+    toast("Loading task…");
+
+    try {
+      const t = await getTaskById(id); //  GET /tasks/{id}
+
+      // Update local list entry too
+      const idx = state.tasks.findIndex((x) => x.id === id);
+      if (idx >= 0) state.tasks[idx] = t;
+
+      $("titleInput").value = t.title || "";
+      $("statusInput").value = toStatusLabel(t.status);
+      $("dueInput").value = t.due_date || "";
+
+      fillModalCategorySelect();
+      fillModalCategoryFromTasks();
+      addCategoryToModalSelect(t.category || "");
+
+      $("descriptionEditor").innerHTML = t.description || "";
+      $("descriptionInput").value = t.description || "";
+
+    } catch (err) {
+      console.error(err);
+      toast(`Failed to load task: ${err.message}`, true);
+      closeModal();
+    }
   }
 
   function initModal() {
@@ -564,15 +488,14 @@
     $("modalClose").addEventListener("click", closeModal);
     $("modalBackdrop").addEventListener("click", closeModal);
 
-    // Add category button
+    // add category locally (UI convenience)
     $("btnAddCategory").addEventListener("click", () => {
       const v = $("categoryNew").value.trim();
       if (!v) return;
-      addCategoryToSelect(v);
+      addCategoryToModalSelect(v);
       $("categoryNew").value = "";
     });
 
-    // Enter key in "Add new..." input
     $("categoryNew").addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
@@ -580,7 +503,7 @@
       }
     });
 
-    // Rich text toolbar
+    // RTE toolbar
     document.querySelectorAll(".rte__btn[data-cmd]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const cmd = btn.getAttribute("data-cmd");
@@ -589,45 +512,46 @@
       });
     });
 
-    // Keep hidden input in sync (store HTML)
     $("descriptionEditor").addEventListener("input", () => {
       $("descriptionInput").value = $("descriptionEditor").innerHTML;
     });
 
-    // Delete
+    // delete
     $("btnDelete").addEventListener("click", async () => {
       const id = $("taskId").value;
       if (!id) return;
 
-      const ok = confirm("Delete this task?");
-      if (!ok) return;
+      if (!confirm("Delete this task?")) return;
 
       try {
-        await deleteTask(id);
-        closeModal();
-        render();
+        await removeTask(id); //  DELETE /tasks/{id}
         toast("Deleted ✅");
+        closeModal();
+
+        // reload current view
+        await loadTasksByCategory(state.currentCategory);
+
+        // refresh categories too (workshop: show endpoint usage)
+        await loadCategories(); // GET /categories
       } catch (err) {
         console.error(err);
         toast(`Delete failed: ${err.message}`, true);
       }
     });
 
-    // Submit
+    // submit
     $("taskForm").addEventListener("submit", async (e) => {
       e.preventDefault();
 
       const id = $("taskId").value;
-
       const categoryValue = $("categorySelect").value || $("categoryNew").value.trim();
       const descriptionHtml = $("descriptionInput").value || $("descriptionEditor").innerHTML || "";
 
-      // Backend expects LABELS
       const payload = {
         title: $("titleInput").value.trim(),
         category: categoryValue,
         due_date: $("dueInput").value,
-        status: $("statusInput").value, // label from select
+        status: $("statusInput").value, // label
         description: descriptionHtml,
       };
 
@@ -636,16 +560,20 @@
 
       try {
         if (!id) {
-          payload.createdAt = nowIso(); // harmless if backend ignores
-          await createTask(payload);
+          await createTask(payload); //  POST /tasks
           toast("Created ✅");
         } else {
-          await updateTask(id, payload);
+          await updateTask(id, payload); // PUT /tasks/{id}
           toast("Updated ✅");
         }
 
         closeModal();
-        render();
+
+        // reload tasks based on current filter (so UI matches)
+        await loadTasksByCategory(state.currentCategory);
+
+        // refresh categories (workshop: show endpoint usage)
+        await loadCategories(); // GET /categories
       } catch (err) {
         console.error(err);
         toast(`Save failed: ${err.message}`, true);
@@ -653,28 +581,119 @@
     });
   }
 
+  // ---------- Category UI ----------
+  function fillCategoryFilterSelect() {
+    // Source of truth for filter: categories API first, but we’ll still add task-derived later
+    const select = $("categoryFilter");
+    if (!select) return;
+
+    const current = select.value;
+    const cats = state.categories || [];
+
+    select.innerHTML =
+      `<option value="">All</option>` +
+      cats.map((c) => `<option value="${escapeHtmlAttr(c)}">${escapeHtml(c)}</option>`).join("");
+
+    // restore selection if possible
+    if (cats.includes(current)) select.value = current;
+  }
+
+  function fillCategoryFilterFromTasks() {
+    // supplement filter with task-derived categories (helps if /categories is empty)
+    const select = $("categoryFilter");
+    if (!select) return;
+
+    const existing = new Set(Array.from(select.options).map((o) => o.value).filter(Boolean));
+    const fromTasks = Array.from(new Set(state.tasks.map((t) => t.category).filter(Boolean)));
+
+    for (const c of fromTasks) existing.add(c);
+
+    const merged = Array.from(existing).sort((a, b) => a.localeCompare(b));
+    const current = select.value;
+
+    select.innerHTML =
+      `<option value="">All</option>` +
+      merged.map((c) => `<option value="${escapeHtmlAttr(c)}">${escapeHtml(c)}</option>`).join("");
+
+    if (merged.includes(current)) select.value = current;
+  }
+
+  function fillModalCategorySelect() {
+    const select = $("categorySelect");
+    if (!select) return;
+
+    const current = select.value;
+    const cats = state.categories || [];
+
+    select.innerHTML =
+      `<option value="">Select category...</option>` +
+      cats.map((c) => `<option value="${escapeHtmlAttr(c)}">${escapeHtml(c)}</option>`).join("");
+
+    if (cats.includes(current)) select.value = current;
+  }
+
+  function fillModalCategoryFromTasks() {
+    const select = $("categorySelect");
+    if (!select) return;
+
+    const existing = new Set(Array.from(select.options).map((o) => o.value).filter(Boolean));
+    const fromTasks = Array.from(new Set(state.tasks.map((t) => t.category).filter(Boolean)));
+
+    for (const c of fromTasks) existing.add(c);
+
+    const merged = Array.from(existing).sort((a, b) => a.localeCompare(b));
+    const current = select.value;
+
+    select.innerHTML =
+      `<option value="">Select category...</option>` +
+      merged.map((c) => `<option value="${escapeHtmlAttr(c)}">${escapeHtml(c)}</option>`).join("");
+
+    if (merged.includes(current)) select.value = current;
+  }
+
+  function addCategoryToModalSelect(name) {
+    const select = $("categorySelect");
+    if (!select) return;
+    const n = (name || "").trim();
+    if (!n) return;
+
+    const exists = Array.from(select.options).some((o) => o.value === n);
+    if (!exists) {
+      const opt = document.createElement("option");
+      opt.value = n;
+      opt.textContent = n;
+      select.appendChild(opt);
+    }
+    select.value = n;
+  }
+
   // ---------- Controls ----------
   function initControls() {
     $("searchInput").addEventListener("input", render);
-    $("categoryFilter").addEventListener("change", render);
     $("sortSelect").addEventListener("change", render);
-    $("btnRefresh").addEventListener("click", loadTasks);
-  }
 
-  // ---------- CSS escape for attribute selectors ----------
-  function cssEscape(value) {
-    if (window.CSS && typeof window.CSS.escape === "function") return window.CSS.escape(value);
-    return safeStr(value).replace(/"/g, '\\"');
+    // Category filter triggers GET /tasks?category=
+    $("categoryFilter").addEventListener("change", async () => {
+      const selected = $("categoryFilter").value || "";
+      await loadTasksByCategory(selected); // GET /tasks OR GET /tasks?category=
+    });
+
+    $("btnRefresh").addEventListener("click", async () => {
+      await loadTasksByCategory(state.currentCategory);
+      await loadCategories(); // GET /categories
+    });
   }
 
   // ---------- Init ----------
-  function init() {
+  async function init() {
     setTitle();
     initControls();
     initDnD();
     initModal();
-    loadCategories();
-    loadTasks();
+
+    // Use all APIs:
+    await loadCategories();        // GET /categories
+    await loadTasksByCategory(""); // GET /tasks
   }
 
   document.addEventListener("DOMContentLoaded", init);

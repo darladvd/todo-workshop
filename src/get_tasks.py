@@ -24,26 +24,31 @@ def lambda_handler(event, context):
     qs = event.get("queryStringParameters") or {}
     category = (qs.get("category") or "").strip()
 
-    # If category is provided, use GSI1 (CATEGORY + due_date sorting)
+    # Only fetch what the landing page needs
+    projection = "EntityType, TaskId, Title, Category, #S, DueDate"
+    expr_names = {"#S": "Status"}
+
     if category:
         resp = table.query(
             IndexName="GSI1",
             KeyConditionExpression=Key("GSI1PK").eq(f"CATEGORY#{category}"),
-            ScanIndexForward=True  # due_date ascending (earliest first)
+            ScanIndexForward=True,  # due_date ascending (earliest first)
+            ProjectionExpression=projection,
+            ExpressionAttributeNames=expr_names,
         )
         items = resp.get("Items", [])
     else:
-        # Otherwise, list ALL tasks using GSI2 (all tasks, sorted by created_at)
         resp = table.query(
             IndexName="GSI2",
             KeyConditionExpression=Key("GSI2PK").eq("TASK"),
-            ScanIndexForward=False  # newest first
+            ScanIndexForward=False,  # newest first
+            ProjectionExpression=projection,
+            ExpressionAttributeNames=expr_names,
         )
         items = resp.get("Items", [])
 
     tasks = []
     for it in items:
-        # (Projection is ALL, but keep this guard anyway)
         if it.get("EntityType") != "Task":
             continue
 
@@ -53,9 +58,6 @@ def lambda_handler(event, context):
             "category": it.get("Category"),
             "status": it.get("Status"),
             "due_date": it.get("DueDate"),
-            "description": it.get("Description"),
-            "created_at": it.get("CreatedAt"),
-            "updated_at": it.get("UpdatedAt"),
         })
 
     return _resp(200, tasks)
