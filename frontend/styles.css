@@ -43,9 +43,27 @@ h1 { margin: 0; font-size: 26px; }
 /* ---------- Controls ---------- */
 .controls {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr;
-  gap: 14px;
+grid-template-columns: minmax(420px, 560px) auto;  align-items: end;
+  column-gap: 48px;                /* BIG space between search and group */
   padding: 0 24px 18px;
+}
+
+.control--search {
+  min-width: 0;
+}
+
+/* Right group: horizontal + stuck to the right */
+.controls__right {
+  display: flex;
+  gap: 14px;          /* space between Category and Sort */
+  justify-self: end;  /* stick to the right edge */
+  align-items: end;
+}
+
+/* Prevent tiny dropdowns */
+#categoryFilter,
+#sortSelect {
+  min-width: 220px;
 }
 
 .control label {

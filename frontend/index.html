@@ -24,27 +24,29 @@
     </header>
 
     <section class="controls">
-        <div class="control">
+        <div class="control control--search">
             <label for="searchInput">Search</label>
             <input id="searchInput" type="text" placeholder="Search task title..." />
         </div>
 
-        <div class="control">
-            <label for="categoryFilter">Category</label>
-            <select id="categoryFilter">
-                <option value="">All</option>
-            </select>
-        </div>
+        <div class="controls__right">
+            <div class="control">
+                <label for="categoryFilter">Filter by Category</label>
+                <select id="categoryFilter">
+                    <option value="">All</option>
+                </select>
+            </div>
 
-        <div class="control">
-            <label for="sortSelect">Sort</label>
-            <select id="sortSelect">
-                <option value="recent">Recently Added</option>
-                <option value="dueSoon">Due Soon</option>
-            </select>
+            <div class="control">
+                <label for="sortSelect">Sort</label>
+                <select id="sortSelect">
+                    <option value="recent">Recently Added</option>
+                    <option value="dueSoon">Due Soon</option>
+                </select>
+            </div>
         </div>
     </section>
-
+ 
     <main class="board" id="board">
         <div class="column" data-status="NOT_STARTED">
             <div class="column__header">
@@ -90,78 +92,76 @@
                 <button class="icon-btn" id="modalClose" aria-label="Close">✕</button>
             </div>
 
-    <form id="taskForm" class="modal__body">
-    <input type="hidden" id="taskId" />
+            <form id="taskForm" class="modal__body">
+                <input type="hidden" id="taskId" />
 
-    <div class="grid">
-        <div class="field">
-        <label>Title</label>
-        <input id="titleInput" required placeholder="e.g., Wireframing the Homepage Layout" />
-        </div>
+                <div class="grid">
+                    <div class="field">
+                        <label>Title</label>
+                        <input id="titleInput" required placeholder="e.g., Wireframing the Homepage Layout" />
+                    </div>
 
-        <div class="field">
-        <label>Status</label>
-        <select id="statusInput">
-            <option value="Not Started">Not Started</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Done">Done</option>
-        </select>
-        </div>
+                    <div class="field">
+                        <label>Status</label>
+                        <select id="statusInput">
+                            <option value="Not Started">Not Started</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Done">Done</option>
+                        </select>
+                    </div>
 
-        <div class="field">
-        <label>Category</label>
+                    <div class="field">
+                        <label>Category</label>
 
-        <div class="combo">
-            <select id="categorySelect">
-            <option value="">Select category...</option>
-            </select>
+                        <div class="combo">
+                            <select id="categorySelect">
+                                <option value="">Select category...</option>
+                            </select>
 
-            <div class="combo__add">
-            <input id="categoryNew" placeholder="Add new..." />
-            <button type="button" class="btn" id="btnAddCategory">Add</button>
-            </div>
-        </div>
+                            <div class="combo__add">
+                                <input id="categoryNew" placeholder="Add new..." />
+                                <button type="button" class="btn" id="btnAddCategory">Add</button>
+                            </div>
+                        </div>
 
-        <div class="hint">Pick an existing category or type a new one and click Add.</div>
-        </div>
+                        <div class="hint">Pick an existing category or type a new one and click Add.</div>
+                    </div>
 
-        <div class="field">
-        <label>Due Date</label>
-        <input id="dueInput" type="date" />
-        </div>
+                    <div class="field">
+                        <label>Due Date</label>
+                        <input id="dueInput" type="date" />
+                    </div>
 
-        <div class="field field--full">
-        <label>Description</label>
+                    <div class="field field--full">
+                        <label>Description</label>
 
-        <!-- Rich Text Box -->
-        <div class="rte">
-            <div class="rte__toolbar">
-            <button type="button" class="rte__btn" data-cmd="bold"><b>B</b></button>
-            <button type="button" class="rte__btn" data-cmd="italic"><i>I</i></button>
-            <button type="button" class="rte__btn" data-cmd="underline"><u>U</u></button>
-            <span class="rte__sep"></span>
-            <button type="button" class="rte__btn" data-cmd="insertUnorderedList">• List</button>
-            <button type="button" class="rte__btn" data-cmd="insertOrderedList">1. List</button>
-            <span class="rte__sep"></span>
-            <button type="button" class="rte__btn" data-cmd="removeFormat">Clear</button>
-            </div>
+                        <div class="rte">
+                            <div class="rte__toolbar">
+                                <button type="button" class="rte__btn" data-cmd="bold"><b>B</b></button>
+                                <button type="button" class="rte__btn" data-cmd="italic"><i>I</i></button>
+                                <button type="button" class="rte__btn" data-cmd="underline"><u>U</u></button>
+                                <span class="rte__sep"></span>
+                                <button type="button" class="rte__btn" data-cmd="insertUnorderedList">• List</button>
+                                <button type="button" class="rte__btn" data-cmd="insertOrderedList">1. List</button>
+                                <span class="rte__sep"></span>
+                                <button type="button" class="rte__btn" data-cmd="removeFormat">Clear</button>
+                            </div>
 
-            <div id="descriptionEditor" class="rte__editor" contenteditable="true"
-                data-placeholder="Write details here…"></div>
-        </div>
+                            <div id="descriptionEditor" class="rte__editor" contenteditable="true"
+                                data-placeholder="Write details here…"></div>
+                        </div>
 
-        <!-- hidden output (HTML string) -->
-        <input type="hidden" id="descriptionInput" />
-        </div>
-    </div>
+                        <input type="hidden" id="descriptionInput" />
+                    </div>
+                </div>
 
-    <div class="modal__footer">
-        <button type="button" class="btn" id="btnDelete" style="display:none;">Delete</button>
-        <div class="spacer"></div>
-        <button type="button" class="btn" id="btnCancel">Cancel</button>
-        <button type="submit" class="btn btn-primary" id="btnSave">Save</button>
-    </div>
-    </form>
+                <div class="modal__footer">
+                    <button type="button" class="btn" id="btnDelete" style="display:none;">Delete</button>
+                    <div class="spacer"></div>
+                    <button type="button" class="btn" id="btnCancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="btnSave">Save</button>
+                </div>
+            </form>
         </div>
     </div>
 

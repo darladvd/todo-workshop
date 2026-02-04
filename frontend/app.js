@@ -1,10 +1,8 @@
 (() => {
   const cfg = window.APP_CONFIG || {};
 
-  // Board uses these codes (data-drop / data-count)
   const STATUS_ORDER = ["NOT_STARTED", "IN_PROGRESS", "DONE"];
 
-  // Mapping between UI codes and API labels
   const STATUS_LABEL_FROM_CODE = {
     NOT_STARTED: "Not Started",
     IN_PROGRESS: "In Progress",
@@ -18,10 +16,10 @@
   };
 
   const state = {
-    tasks: [],              // tasks currently loaded (maybe category-scoped)
-    categories: [],         // categories loaded from GET /categories
+    tasks: [],
+    categories: [],
     dragTaskId: null,
-    currentCategory: "",    // active category filter ("" = all)
+    currentCategory: "",
   };
 
   const $ = (id) => document.getElementById(id);
@@ -89,7 +87,6 @@
   }
 
   function normalizeTask(raw) {
-    // backend shape (preferred)
     const id = raw.id ?? raw.taskId ?? raw._id ?? "";
     const due = raw.due_date ?? raw.dueDate ?? "";
 
@@ -97,7 +94,7 @@
       id: safeStr(id),
       title: safeStr(raw.title || "Untitled Task"),
       category: safeStr(raw.category || ""),
-      status: toStatusCode(raw.status || "Not Started"), // store CODE in UI state
+      status: toStatusCode(raw.status || "Not Started"),
       due_date: safeStr(due || ""),
       description: safeStr(raw.description || ""),
       created_at: safeStr(raw.created_at || ""),
@@ -179,7 +176,7 @@
     return data;
   }
 
-  // ✅ GET /categories (used for modal + optional filter list)
+  // GET /categories (used for modal + optional filter list)
   async function loadCategories() {
     try {
       const data = await apiFetch(categoriesPath(), { method: "GET" });
@@ -191,15 +188,14 @@
 
       state.categories = Array.from(new Set(cats)).sort((a, b) => a.localeCompare(b));
       fillModalCategorySelect();
-      fillCategoryFilterSelect(); // optional: keep filter list aligned with categories API
+      fillCategoryFilterSelect();
     } catch (err) {
       console.warn("GET /categories failed:", err);
       state.categories = [];
-      // still keep UI functional using tasks-derived categories later
     }
   }
 
-  // ✅ GET /tasks OR GET /tasks?category=
+  // GET /tasks OR GET /tasks?category=
   async function loadTasksByCategory(category) {
     try {
       setLoading(true);
@@ -207,12 +203,11 @@
 
       let path = tasksPath();
 
-      // If a category is selected, call the query param endpoint
       if (state.currentCategory) {
         const q = encodeURIComponent(state.currentCategory);
-        path = `${tasksPath()}?category=${q}`;  // GET /tasks?category=
+        path = `${tasksPath()}?category=${q}`;
       } else {
-        path = tasksPath();                     // GET /tasks
+        path = tasksPath();
       }
 
       const data = await apiFetch(path, { method: "GET" });
@@ -220,7 +215,6 @@
       state.tasks = arr.map(normalizeTask).filter((t) => t.id);
 
       render();
-      // Keep category lists fresh (tasks can introduce categories)
       fillCategoryFilterFromTasks();
       fillModalCategoryFromTasks();
     } catch (err) {
@@ -231,13 +225,13 @@
     }
   }
 
-  // ✅ GET /tasks/{id} when opening edit modal
+  // GET /tasks/{id} when opening edit modal
   async function getTaskById(id) {
-    const data = await apiFetch(taskByIdPath(id), { method: "GET" }); //  GET /tasks/{id}
+    const data = await apiFetch(taskByIdPath(id), { method: "GET" });
     return normalizeTask(data);
   }
 
-  // ✅ POST /tasks
+  // POST /tasks
   async function createTask(payload) {
     await apiFetch(tasksPath(), {
       method: "POST",
@@ -260,7 +254,6 @@
 
   // ---------- Rendering ----------
   function render() {
-    // clear columns + reset counts
     for (const statusCode of STATUS_ORDER) {
       const body = document.querySelector(`.column__body[data-drop="${cssEscape(statusCode)}"]`);
       if (body) body.innerHTML = "";
@@ -271,7 +264,6 @@
 
     const counts = { NOT_STARTED: 0, IN_PROGRESS: 0, DONE: 0 };
 
-    // Search + sort are client-side (keeps UI snappy)
     const list = filterAndSortTasks(state.tasks);
 
     for (const t of list) {
@@ -305,7 +297,6 @@
         return safeStr(b.created_at).localeCompare(safeStr(a.created_at));
       });
     } else {
-      // recent
       list.sort((a, b) => safeStr(b.created_at).localeCompare(safeStr(a.created_at)));
     }
 
@@ -324,7 +315,6 @@
 
     const dueText = formatDue(t.due_date);
 
-    //  date only (no icon, no pill)
     const dueHtml = `<span class="due-inline" title="Due date">${escapeHtml(dueText)}</span>`;
 
     card.innerHTML = `
@@ -347,7 +337,6 @@
 
     card.addEventListener("click", () => openModalForEdit(t.id));
 
-    // drag
     card.addEventListener("dragstart", (e) => {
       state.dragTaskId = t.id;
       card.classList.add("dragging");
@@ -377,7 +366,7 @@
         e.preventDefault();
         zone.classList.remove("dragover");
 
-        const newStatusCode = zone.dataset.drop; // NOT_STARTED / IN_PROGRESS / DONE
+        const newStatusCode = zone.dataset.drop;
         const id = e.dataTransfer.getData("text/plain") || state.dragTaskId;
         if (!id) return;
 
@@ -386,15 +375,13 @@
 
         if (task.status === newStatusCode) return;
 
-        // optimistic UI
         const prev = task.status;
         task.status = newStatusCode;
         render();
 
         try {
-          await updateTask(id, { status: toStatusLabel(newStatusCode) }); // PUT /tasks/{id}
+          await updateTask(id, { status: toStatusLabel(newStatusCode) });
           toast(`Moved to ${toStatusLabel(newStatusCode)} ✅`);
-          // reload tasks for the current filter to keep list consistent
           await loadTasksByCategory(state.currentCategory);
         } catch (err) {
           console.error(err);
@@ -437,7 +424,6 @@
     $("descriptionEditor").innerHTML = "";
     $("descriptionInput").value = "";
 
-    // ensure modal category list is up to date
     fillModalCategorySelect();
     fillModalCategoryFromTasks();
 
@@ -445,22 +431,18 @@
     $("titleInput").focus();
   }
 
-  //  Edit modal: call GET /tasks/{id}
   async function openModalForEdit(id) {
     $("modalTitle").textContent = "Edit Task";
     $("btnDelete").style.display = "inline-block";
     $("taskId").value = id;
 
-    // show modal fast
     openModal();
 
-    // optional: lightweight loading hint
     toast("Loading task…");
 
     try {
-      const t = await getTaskById(id); //  GET /tasks/{id}
+      const t = await getTaskById(id);
 
-      // Update local list entry too
       const idx = state.tasks.findIndex((x) => x.id === id);
       if (idx >= 0) state.tasks[idx] = t;
 
@@ -488,7 +470,6 @@
     $("modalClose").addEventListener("click", closeModal);
     $("modalBackdrop").addEventListener("click", closeModal);
 
-    // add category locally (UI convenience)
     $("btnAddCategory").addEventListener("click", () => {
       const v = $("categoryNew").value.trim();
       if (!v) return;
@@ -503,7 +484,6 @@
       }
     });
 
-    // RTE toolbar
     document.querySelectorAll(".rte__btn[data-cmd]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const cmd = btn.getAttribute("data-cmd");
@@ -516,7 +496,6 @@
       $("descriptionInput").value = $("descriptionEditor").innerHTML;
     });
 
-    // delete
     $("btnDelete").addEventListener("click", async () => {
       const id = $("taskId").value;
       if (!id) return;
@@ -524,22 +503,25 @@
       if (!confirm("Delete this task?")) return;
 
       try {
-        await removeTask(id); //  DELETE /tasks/{id}
+        await removeTask(id);
         toast("Deleted ✅");
         closeModal();
 
-        // reload current view
-        await loadTasksByCategory(state.currentCategory);
+        await loadCategories();
 
-        // refresh categories too (workshop: show endpoint usage)
-        await loadCategories(); // GET /categories
+        await ensureValidCategoryFilterAndReload();
+
+        if (state.currentCategory) {
+        await loadTasksByCategory(state.currentCategory);
+        } else {
+        await loadTasksByCategory("");
+        }
       } catch (err) {
         console.error(err);
         toast(`Delete failed: ${err.message}`, true);
       }
     });
 
-    // submit
     $("taskForm").addEventListener("submit", async (e) => {
       e.preventDefault();
 
@@ -551,7 +533,7 @@
         title: $("titleInput").value.trim(),
         category: categoryValue,
         due_date: $("dueInput").value,
-        status: $("statusInput").value, // label
+        status: $("statusInput").value,
         description: descriptionHtml,
       };
 
@@ -560,20 +542,24 @@
 
       try {
         if (!id) {
-          await createTask(payload); //  POST /tasks
+          await createTask(payload);
           toast("Created ✅");
         } else {
-          await updateTask(id, payload); // PUT /tasks/{id}
+          await updateTask(id, payload);
           toast("Updated ✅");
         }
 
         closeModal();
 
-        // reload tasks based on current filter (so UI matches)
-        await loadTasksByCategory(state.currentCategory);
+        await loadCategories();
 
-        // refresh categories (workshop: show endpoint usage)
-        await loadCategories(); // GET /categories
+        await ensureValidCategoryFilterAndReload();
+
+        if (state.currentCategory) {
+        await loadTasksByCategory(state.currentCategory);
+        } else {
+        await loadTasksByCategory("");
+        }
       } catch (err) {
         console.error(err);
         toast(`Save failed: ${err.message}`, true);
@@ -583,7 +569,6 @@
 
   // ---------- Category UI ----------
   function fillCategoryFilterSelect() {
-    // Source of truth for filter: categories API first, but we’ll still add task-derived later
     const select = $("categoryFilter");
     if (!select) return;
 
@@ -594,12 +579,10 @@
       `<option value="">All</option>` +
       cats.map((c) => `<option value="${escapeHtmlAttr(c)}">${escapeHtml(c)}</option>`).join("");
 
-    // restore selection if possible
     if (cats.includes(current)) select.value = current;
   }
 
   function fillCategoryFilterFromTasks() {
-    // supplement filter with task-derived categories (helps if /categories is empty)
     const select = $("categoryFilter");
     if (!select) return;
 
@@ -667,20 +650,28 @@
     select.value = n;
   }
 
+  async function ensureValidCategoryFilterAndReload() {
+    if (state.currentCategory && !state.categories.includes(state.currentCategory)) {
+        state.currentCategory = "";
+        const select = $("categoryFilter");
+        if (select) select.value = "";
+        await loadTasksByCategory("");
+    }
+  }
+
   // ---------- Controls ----------
   function initControls() {
     $("searchInput").addEventListener("input", render);
     $("sortSelect").addEventListener("change", render);
 
-    // Category filter triggers GET /tasks?category=
     $("categoryFilter").addEventListener("change", async () => {
       const selected = $("categoryFilter").value || "";
-      await loadTasksByCategory(selected); // GET /tasks OR GET /tasks?category=
+      await loadTasksByCategory(selected);
     });
 
     $("btnRefresh").addEventListener("click", async () => {
       await loadTasksByCategory(state.currentCategory);
-      await loadCategories(); // GET /categories
+      await loadCategories();
     });
   }
 
@@ -691,9 +682,8 @@
     initDnD();
     initModal();
 
-    // Use all APIs:
-    await loadCategories();        // GET /categories
-    await loadTasksByCategory(""); // GET /tasks
+    await loadCategories();
+    await loadTasksByCategory("");
   }
 
   document.addEventListener("DOMContentLoaded", init);
