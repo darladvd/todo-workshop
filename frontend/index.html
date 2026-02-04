@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>To Do Workshop</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+    <header class="topbar">
+        <div class="topbar__left">
+            <h1 id="pageTitle">To Do List</h1>
+            <p class="subtitle">Drag cards between columns • Search, filter, sort</p>
+        </div>
+
+        <div class="topbar__right">
+            <button id="btnRefresh" class="btn">↻ Refresh</button>
+            <button id="btnNew" class="btn btn-primary">+ New Task</button>
+        </div>
+    </header>
+
+    <section class="controls">
+        <div class="control">
+            <label for="searchInput">Search</label>
+            <input id="searchInput" type="text" placeholder="Search task title..." />
+        </div>
+
+        <div class="control">
+            <label for="categoryFilter">Category</label>
+            <select id="categoryFilter">
+                <option value="">All</option>
+            </select>
+        </div>
+
+        <div class="control">
+            <label for="sortSelect">Sort</label>
+            <select id="sortSelect">
+                <option value="recent">Recently Added</option>
+                <option value="dueSoon">Due Soonest</option>
+            </select>
+        </div>
+    </section>
+
+    <main class="board" id="board">
+        <div class="column" data-status="NOT_STARTED">
+            <div class="column__header">
+                <div class="column__title">
+                    <span class="dot dot-blue"></span>
+                    <span>Not Started</span>
+                    <span class="count" data-count="NOT_STARTED">0</span>
+                </div>
+            </div>
+            <div class="column__body droppable" data-drop="NOT_STARTED"></div>
+        </div>
+
+        <div class="column" data-status="IN_PROGRESS">
+            <div class="column__header">
+                <div class="column__title">
+                    <span class="dot dot-indigo"></span>
+                    <span>In Progress</span>
+                    <span class="count" data-count="IN_PROGRESS">0</span>
+                </div>
+            </div>
+            <div class="column__body droppable" data-drop="IN_PROGRESS"></div>
+        </div>
+
+        <div class="column" data-status="DONE">
+            <div class="column__header">
+                <div class="column__title">
+                    <span class="dot dot-green"></span>
+                    <span>Done</span>
+                    <span class="count" data-count="DONE">0</span>
+                </div>
+            </div>
+            <div class="column__body droppable" data-drop="DONE"></div>
+        </div>
+    </main>
+
+    <!-- Modal -->
+    <div class="modal" id="modal" aria-hidden="true">
+        <div class="modal__backdrop" id="modalBackdrop"></div>
+
+        <div class="modal__panel" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+            <div class="modal__header">
+                <h2 id="modalTitle">Add New Task</h2>
+                <button class="icon-btn" id="modalClose" aria-label="Close">✕</button>
+            </div>
+
+    <form id="taskForm" class="modal__body">
+    <input type="hidden" id="taskId" />
+
+    <div class="grid">
+        <div class="field">
+        <label>Title</label>
+        <input id="titleInput" required placeholder="e.g., Wireframing the Homepage Layout" />
+        </div>
+
+        <div class="field">
+        <label>Status</label>
+        <select id="statusInput">
+            <option value="Not Started">Not Started</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Done">Done</option>
+        </select>
+        </div>
+
+        <div class="field">
+        <label>Category</label>
+
+        <div class="combo">
+            <select id="categorySelect">
+            <option value="">Select category...</option>
+            </select>
+
+            <div class="combo__add">
+            <input id="categoryNew" placeholder="Add new..." />
+            <button type="button" class="btn" id="btnAddCategory">Add</button>
+            </div>
+        </div>
+
+        <div class="hint">Pick an existing category or type a new one and click Add.</div>
+        </div>
+
+        <div class="field">
+        <label>Due Date</label>
+        <input id="dueInput" type="date" />
+        </div>
+
+        <div class="field field--full">
+        <label>Description</label>
+
+        <div class="rte">
+            <div class="rte__toolbar">
+            <button type="button" class="rte__btn" data-cmd="bold"><b>B</b></button>
+            <button type="button" class="rte__btn" data-cmd="italic"><i>I</i></button>
+            <button type="button" class="rte__btn" data-cmd="underline"><u>U</u></button>
+            <span class="rte__sep"></span>
+            <button type="button" class="rte__btn" data-cmd="insertUnorderedList">• List</button>
+            <button type="button" class="rte__btn" data-cmd="insertOrderedList">1. List</button>
+            <span class="rte__sep"></span>
+            <button type="button" class="rte__btn" data-cmd="removeFormat">Clear</button>
+            </div>
+
+            <div id="descriptionEditor" class="rte__editor" contenteditable="true"
+                data-placeholder="Write details here…"></div>
+        </div>
+
+        <!-- hidden output (HTML string) -->
+        <input type="hidden" id="descriptionInput" />
+        </div>
+    </div>
+
+    <div class="modal__footer">
+        <button type="button" class="btn" id="btnDelete" style="display:none;">Delete</button>
+        <div class="spacer"></div>
+        <button type="button" class="btn" id="btnCancel">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="btnSave">Save</button>
+    </div>
+    </form>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
