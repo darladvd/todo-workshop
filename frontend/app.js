@@ -1,10 +1,8 @@
 (() => {
   const cfg = window.APP_CONFIG || {};
 
-  // UI column codes (match your index.html data-drop / data-count)
   const STATUS_ORDER = ["NOT_STARTED", "IN_PROGRESS", "DONE"];
 
-  // Mapping between backend labels and UI codes
   const STATUS_LABEL_FROM_CODE = {
     NOT_STARTED: "Not Started",
     IN_PROGRESS: "In Progress",
@@ -413,12 +411,11 @@
 
     const overdue = isOverdue(t.due_date);
     const dueText = formatDue(t.due_date);
-    const dueHtml = `<span class="due" title="${overdue ? "Overdue" : "Due"}">${overdue ? "⚠︎" : "📅"} ${escapeHtml(
-      dueText
-    )}</span>`;
-
-    const hasDesc = safeStr(t.description).trim().length > 0;
-    const descIcon = hasDesc ? `<span class="badge" title="Has description">?</span>` : "";
+    const dueHtml = `
+    <span class="due-inline" title="${overdue ? "Overdue" : "Due date"}">
+        ${escapeHtml(dueText)}
+    </span>
+    `;
 
     card.innerHTML = `
       <div class="card__top">
@@ -430,9 +427,6 @@
 
       <div class="card__footer">
         ${dueHtml}
-        <div class="avatars">
-          ${descIcon}
-        </div>
       </div>
     `;
 
