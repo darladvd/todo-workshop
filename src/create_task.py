@@ -85,6 +85,8 @@ def lambda_handler(event, context):
     pk = f"TASK#{task_id}"
     gsi1pk = f"CATEGORY#{category}"
     gsi1sk = f"TASK#{due_date}#{task_id}"
+    gsi2pk = "TASK"
+    gsi2sk = f"{now}#{task_id}"
 
     item = {
         "PK": pk,
@@ -98,6 +100,8 @@ def lambda_handler(event, context):
         "UpdatedAt": now,
         "GSI1PK": gsi1pk,
         "GSI1SK": gsi1sk,
+        "GSI2PK": gsi2pk,
+        "GSI2SK": gsi2sk,
     }
 
     if description is not None:
