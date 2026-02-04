@@ -1,0 +1,33 @@
+# SAM configuration file for AWS Serverless Workshop
+version = 0.1
+
+[default]
+[default.global.parameters]
+# STUDENTS: change this to your assigned ID (e.g. todo-workshop-01)
+stack_name = "todo-workshop-36"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.validate.parameters]
+lint = false
+
+[default.deploy.parameters]
+region = "ap-southeast-1"
+
+# Use shared instructor-managed artifacts bucket
+s3_bucket = "todo-workshop-artifacts-141922114492"
+s3_prefix = "todo-workshop-36"
+
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = false
+fail_on_empty_changeset = false
+
+# CloudFormation execution role
+role_arn = "arn:aws:iam::141922114492:role/TodoWorkshopCfnRole"
+
+[default.package.parameters]
+s3_bucket = "todo-workshop-artifacts-141922114492"
+# STUDENTS: change this to your assigned ID (e.g. todo-workshop-01)
+s3_prefix = "todo-workshop-36"
